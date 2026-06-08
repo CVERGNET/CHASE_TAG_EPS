@@ -21,25 +21,6 @@
             overflow-x: hidden;
         }
 
-        body::before {
-            content: '';
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: 
-                repeating-linear-gradient(
-                    90deg,
-                    rgba(255, 215, 0, 0.03) 0px,
-                    rgba(255, 215, 0, 0.03) 2px,
-                    transparent 2px,
-                    transparent 4px
-                );
-            pointer-events: none;
-            z-index: 1;
-        }
-
         .container {
             max-width: 1400px;
             margin: 0 auto;
@@ -1001,471 +982,307 @@
             }
         }
 
-        function addPlayerRow(teamId) {
-            const container = document.getElementById(`team${teamId}Players`);
-            const playerCount = container.children.length + 1;
-            
-            const row = document.createElement('div');
-            row.className = 'player-input-row';
-            row.innerHTML = `
-                <span>#${playerCount}</span>
-                <input type="text" placeholder="Prénom" class="player-prenom">
-                <button class="btn-danger" onclick="this.parentElement.remove()">✕</button>
+        function addPlayerRow(teamNumber) {
+            const teamElement = document.getElementById(`team${teamNumber}Players`);
+            const playerCount = teamElement.querySelectorAll('.player-input-row').length + 1;
+
+            const playerRow = document.createElement('div');
+            playerRow.className = 'player-input-row';
+            playerRow.innerHTML = `
+                <span>J${playerCount}</span>
+                <input type="text" placeholder="Nom du joueur" class="player-input">
+                <button type="button" class="btn-danger" onclick="this.parentElement.remove()">✕</button>
             `;
-            container.appendChild(row);
+            teamElement.appendChild(playerRow);
         }
 
-        updatePlayerInputs();
-
         function startGame() {
-            gameData.teams[1].name = document.getElementById('team1Name').value || 'Équipe 1';
-            gameData.teams[2].name = document.getElementById('team2Name').value || 'Équipe 2';
+            const team1Name = document.getElementById('team1Name').value;
+            const team2Name = document.getElementById('team2Name').value;
 
-            gameData.teams[1].players = getPlayersFromInput(1);
-            gameData.teams[2].players = getPlayersFromInput(2);
+            const team1Players = Array.from(document.querySelectorAll('#team1Players .player-input'))
+                .map(input => input.value.trim())
+                .filter(name => name);
 
-            if (gameData.teams[1].players.length === 0 || gameData.teams[2].players.length === 0) {
-                alert('Veuillez ajouter au moins un joueur par équipe !');
+            const team2Players = Array.from(document.querySelectorAll('#team2Players .player-input'))
+                .map(input => input.value.trim())
+                .filter(name => name);
+
+            if (team1Players.length === 0 || team2Players.length === 0) {
+                alert('Veuillez ajouter au moins un joueur par équipe');
                 return;
             }
 
-            initializeStats();
+            gameData.teams[1] = {
+                name: team1Name,
+                players: team1Players.map(name => ({ name, score: 0, wins: 0, losses: 0 })),
+                score: 0,
+                playedPlayers: []
+            };
+
+            gameData.teams[2] = {
+                name: team2Name,
+                players: team2Players.map(name => ({ name, score: 0, wins: 0, losses: 0 })),
+                score: 0,
+                playedPlayers: []
+            };
+
+            gameData.currentManche = 1;
+            gameData.currentMatch = null;
+
             document.getElementById('configSection').style.display = 'none';
             document.getElementById('gameSection').classList.add('active');
 
-            // Afficher les noms d'équipes
-            document.getElementById('team1DisplayName').textContent = gameData.teams[1].name;
-            document.getElementById('team2DisplayName').textContent = gameData.teams[2].name;
-            document.getElementById('team1TitleName').textContent = gameData.teams[1].name;
-            document.getElementById('team2TitleName').textContent = gameData.teams[2].name;
-
-            startNewManche();
-        }
-
-        function getPlayersFromInput(teamId) {
-            const container = document.getElementById(`team${teamId}Players`);
-            const players = [];
-            
-            container.querySelectorAll('.player-input-row').forEach((row, index) => {
-                const prenom = row.querySelector('.player-prenom').value.trim();
-                
-                if (prenom) {
-                    players.push({
-                        id: index,
-                        prenom: prenom,
-                        role: null,
-                        totalPoints: 0,
-                        timeInAttack: 0,
-                        timeInDefense: 0,
-                        manches: {}
-                    });
-                }
-            });
-            
-            return players;
-        }
-
-        function initializeStats() {
-            [1, 2].forEach(teamId => {
-                gameData.teams[teamId].score = 0;
-                gameData.teams[teamId].playedPlayers = [];
-                gameData.teams[teamId].players.forEach(player => {
-                    player.totalPoints = 0;
-                    player.timeInAttack = 0;
-                    player.timeInDefense = 0;
-                    player.manches = {};
-                });
-            });
-        }
-
-        function startNewManche() {
-            gameData.currentManche = 1;
-            gameData.teams[1].playedPlayers = [];
-            gameData.teams[2].playedPlayers = [];
-            gameData.lastTouch = null;
-            
-            assignRoles();
-            selectNextMatch();
             updateGameDisplay();
-            resetTimer();
-        }
-
-        function assignRoles() {
-            const mancheIndex = gameData.currentManche - 1;
-            let isTeam1Chat;
-
-            if (gameData.config.roleMode === 'fixed') {
-                isTeam1Chat = mancheIndex % 2 === 0;
-            } else {
-                if (gameData.config.nbManches % 2 === 1) {
-                    isTeam1Chat = mancheIndex % 2 === 0;
-                } else {
-                    isTeam1Chat = mancheIndex % 2 === 0;
-                }
-            }
-
-            gameData.teams[1].players.forEach(p => {
-                p.role = isTeam1Chat ? 'chat' : 'souris';
-            });
-            gameData.teams[2].players.forEach(p => {
-                p.role = isTeam1Chat ? 'souris' : 'chat';
-            });
-        }
-
-        function selectNextMatch() {
-            if (gameData.config.gameMode === 'random') {
-                selectRandomMatch();
-            } else {
-                selectChallengeMatch();
-            }
-        }
-
-        function selectRandomMatch() {
-            const availablePlayers1 = gameData.teams[1].players.filter(p => !gameData.teams[1].playedPlayers.includes(p.id));
-            const availablePlayers2 = gameData.teams[2].players.filter(p => !gameData.teams[2].playedPlayers.includes(p.id));
-
-            if (availablePlayers1.length === 0 || availablePlayers2.length === 0) {
-                endManche();
-                return;
-            }
-
-            const player1 = availablePlayers1[Math.floor(Math.random() * availablePlayers1.length)];
-            const player2 = availablePlayers2[Math.floor(Math.random() * availablePlayers2.length)];
-            
-            gameData.currentMatch = {
-                team1Player: player1,
-                team2Player: player2
-            };
-
-            gameData.currentMatchTouches = 0;
-            gameData.lastTouch = null;
-            gameData.teams[1].playedPlayers.push(player1.id);
-            gameData.teams[2].playedPlayers.push(player2.id);
-        }
-
-        function selectChallengeMatch() {
-            const availablePlayers1 = gameData.teams[1].players.filter(p => !gameData.teams[1].playedPlayers.includes(p.id));
-            const availablePlayers2 = gameData.teams[2].players.filter(p => !gameData.teams[2].playedPlayers.includes(p.id));
-
-            if (availablePlayers1.length === 0 || availablePlayers2.length === 0) {
-                endManche();
-                return;
-            }
-
-            const player1 = availablePlayers1[0];
-            const player2 = availablePlayers2[0];
-            
-            gameData.currentMatch = {
-                team1Player: player1,
-                team2Player: player2
-            };
-
-            gameData.currentMatchTouches = 0;
-            gameData.lastTouch = null;
-            gameData.teams[1].playedPlayers.push(player1.id);
-            gameData.teams[2].playedPlayers.push(player2.id);
+            nextMatch();
         }
 
         function updateGameDisplay() {
             document.getElementById('mancheCounter').textContent = gameData.currentManche;
             document.getElementById('mancheTotal').textContent = gameData.config.nbManches;
-
-            const modeText = gameData.config.gameMode === 'random' 
-                ? '🎲 Aléatoire' 
-                : '🎯 Défi';
-            document.getElementById('modeDisplay').textContent = modeText;
-
+            document.getElementById('team1DisplayName').textContent = gameData.teams[1].name;
+            document.getElementById('team2DisplayName').textContent = gameData.teams[2].name;
+            document.getElementById('team1TitleName').textContent = gameData.teams[1].name;
+            document.getElementById('team2TitleName').textContent = gameData.teams[2].name;
             document.getElementById('team1Score').textContent = gameData.teams[1].score;
             document.getElementById('team2Score').textContent = gameData.teams[2].score;
 
-            const progress1 = gameData.teams[1].playedPlayers.length;
-            const progress2 = gameData.teams[2].playedPlayers.length;
-            const total1 = gameData.teams[1].players.length;
-            const total2 = gameData.teams[2].players.length;
-            document.getElementById('matchProgress').innerHTML = `
-                Affrontement ${progress1}/${total1} (${gameData.teams[1].name}) vs ${progress2}/${total2} (${gameData.teams[2].name})
-            `;
+            const modeText = gameData.config.gameMode === 'random' ? '🎲 Mode Aléatoire' : '🎯 Mode Défi (Ordre)';
+            document.getElementById('modeDisplay').textContent = modeText;
 
-            if (gameData.currentMatch) {
-                const p1 = gameData.currentMatch.team1Player;
-                const p2 = gameData.currentMatch.team2Player;
-                const roleTeam1 = gameData.teams[1].players[0].role.toUpperCase();
-                const roleTeam2 = gameData.teams[2].players[0].role.toUpperCase();
-
-                document.getElementById('currentMatch').innerHTML = `
-                    <strong>#${p1.id + 1} ${p1.prenom}</strong> (${roleTeam1})
-                    vs
-                    <strong>#${p2.id + 1} ${p2.prenom}</strong> (${roleTeam2})
-                `;
-
-                document.getElementById('team1Role').textContent = roleTeam1;
-                document.getElementById('team1Role').className = roleTeam1 === 'CHAT' ? 'role-badge chat-badge' : 'role-badge souris-badge';
-
-                document.getElementById('team2Role').textContent = roleTeam2;
-                document.getElementById('team2Role').className = roleTeam2 === 'CHAT' ? 'role-badge chat-badge' : 'role-badge souris-badge';
-            }
-
-            // Afficher/masquer le bouton Annuler
-            document.getElementById('btnUndo').style.display = gameData.lastTouch ? 'block' : 'none';
-
-            updatePlayersDisplay();
             updateStats();
             updateRankings();
         }
 
-        function updatePlayersDisplay() {
-            updateTeamDisplay(1);
-            updateTeamDisplay(2);
-        }
+        function nextMatch() {
+            if (!gameData.currentMatch) {
+                gameData.currentMatch = selectNextMatch();
+            }
 
-        function updateTeamDisplay(teamId) {
-            const container = document.getElementById(`team${teamId}GamePlayers`);
-            container.innerHTML = '';
-
-            gameData.teams[teamId].players.forEach(player => {
-                const btn = document.createElement('button');
-                btn.className = 'player-button';
-                
-                const isInMatch = (player === gameData.currentMatch.team1Player && teamId === 1) ||
-                                  (player === gameData.currentMatch.team2Player && teamId === 2);
-                
-                const hasPlayed = gameData.teams[teamId].playedPlayers.includes(player.id);
-
-                btn.innerHTML = `
-                    <div class="player-name">#${player.id + 1} ${player.prenom}</div>
-                    <div class="player-stats">
-                        Points: ${player.totalPoints}
-                    </div>
-                `;
-
-                if (isInMatch) {
-                    btn.onclick = () => markPlayerTouched(teamId, player);
-                } else if (hasPlayed) {
-                    btn.classList.add('played');
-                    btn.disabled = true;
-                } else {
-                    btn.classList.add('disabled');
-                    btn.disabled = true;
-                }
-
-                container.appendChild(btn);
-            });
-        }
-
-        function markPlayerTouched(teamId, player) {
-            const maxTouches = gameData.config.matchFormat === '1v1' ? 1 : 2;
-
-            if (gameData.currentMatchTouches >= maxTouches) {
-                alert(`⚠️ Max ${maxTouches} touche(s) !`);
+            if (!gameData.currentMatch) {
+                endManche();
                 return;
             }
 
-            const otherTeamId = teamId === 1 ? 2 : 1;
-            const otherPlayer = teamId === 1 ? gameData.currentMatch.team2Player : gameData.currentMatch.team1Player;
+            gameData.currentMatchTouches = 0;
+            gameData.lastTouch = null;
 
-            if (player.role === 'chat') {
-                const timeUsed = gameData.config.mancheDuration - gameData.timer.timeLeft;
-                
-                player.totalPoints++;
-                otherPlayer.totalPoints++;
-                
-                gameData.teams[teamId].score++;
-                gameData.currentMatchTouches++;
+            updatePlayerDisplay();
+            updateMatchInfo();
+            resetTimer();
+        }
 
-                player.timeInAttack += timeUsed;
-                otherPlayer.timeInDefense += timeUsed;
+        function selectNextMatch() {
+            const format = gameData.config.matchFormat;
+            const team1 = gameData.teams[1];
+            const team2 = gameData.teams[2];
 
-                // Enregistrer la dernière touche pour pouvoir l'annuler
-                gameData.lastTouch = {
-                    teamId: teamId,
-                    player: player,
-                    otherPlayer: otherPlayer,
-                    timeUsed: timeUsed
-                };
+            const availableTeam1 = team1.players.filter(p => !gameData.teams[1].playedPlayers.includes(p.name));
+            const availableTeam2 = team2.players.filter(p => !gameData.teams[2].playedPlayers.includes(p.name));
 
-                if (!player.manches[gameData.currentManche]) {
-                    player.manches[gameData.currentManche] = { points: 0 };
+            if (availableTeam1.length === 0 || availableTeam2.length === 0) {
+                return null;
+            }
+
+            let players1, players2;
+
+            if (gameData.config.gameMode === 'random') {
+                players1 = [];
+                players2 = [];
+                for (let i = 0; i < (format === '1v1' ? 1 : 2); i++) {
+                    const idx1 = Math.floor(Math.random() * availableTeam1.length);
+                    players1.push(availableTeam1[idx1].name);
+                    availableTeam1.splice(idx1, 1);
+
+                    const idx2 = Math.floor(Math.random() * availableTeam2.length);
+                    players2.push(availableTeam2[idx2].name);
+                    availableTeam2.splice(idx2, 1);
                 }
-                player.manches[gameData.currentManche].points++;
+            } else {
+                players1 = availableTeam1.slice(0, format === '1v1' ? 1 : 2).map(p => p.name);
+                players2 = availableTeam2.slice(0, format === '1v1' ? 1 : 2).map(p => p.name);
+            }
 
-                if (!otherPlayer.manches[gameData.currentManche]) {
-                    otherPlayer.manches[gameData.currentManche] = { points: 0 };
+            return { team1: players1, team2: players2 };
+        }
+
+        function updatePlayerDisplay() {
+            const match = gameData.currentMatch;
+            const team1GamePlayers = document.getElementById('team1GamePlayers');
+            const team2GamePlayers = document.getElementById('team2GamePlayers');
+
+            team1GamePlayers.innerHTML = '';
+            team2GamePlayers.innerHTML = '';
+
+            match.team1.forEach(playerName => {
+                const btn = document.createElement('button');
+                btn.className = 'player-button';
+                btn.innerHTML = `<div class="player-name">${playerName}</div>`;
+                btn.onclick = () => recordTouch(1, playerName, btn);
+                team1GamePlayers.appendChild(btn);
+            });
+
+            match.team2.forEach(playerName => {
+                const btn = document.createElement('button');
+                btn.className = 'player-button';
+                btn.innerHTML = `<div class="player-name">${playerName}</div>`;
+                btn.onclick = () => recordTouch(2, playerName, btn);
+                team2GamePlayers.appendChild(btn);
+            });
+        }
+
+        function recordTouch(teamNumber, playerName, button) {
+            gameData.currentMatchTouches++;
+            gameData.lastTouch = { team: teamNumber, player: playerName, button: button };
+
+            if (gameData.currentMatchTouches % 2 === 0) {
+                const winnerTeam = gameData.lastTouch.team;
+                gameData.teams[winnerTeam].score++;
+                gameData.teams[winnerTeam].playedPlayers.push(playerName);
+
+                const playerObj = gameData.teams[winnerTeam].players.find(p => p.name === playerName);
+                if (playerObj) {
+                    playerObj.wins++;
                 }
-                otherPlayer.manches[gameData.currentManche].points++;
 
-                alert(`✅ Touche !`);
+                const loserTeam = winnerTeam === 1 ? 2 : 1;
+                const loserName = gameData.lastTouch.team === 1 ? 
+                    gameData.currentMatch.team2[0] : gameData.currentMatch.team1[0];
                 
-                if (gameData.currentMatchTouches >= maxTouches) {
-                    setTimeout(() => nextMatch(), 500);
-                } else {
-                    updateGameDisplay();
+                const loserObj = gameData.teams[loserTeam].players.find(p => p.name === loserName);
+                if (loserObj) {
+                    loserObj.losses++;
                 }
             }
+
+            button.classList.add('played');
+            updateMatchInfo();
+            updateGameDisplay();
+
+            document.getElementById('btnUndo').style.display = 'block';
         }
 
         function undoLastTouch() {
             if (!gameData.lastTouch) return;
 
-            const { teamId, player, otherPlayer, timeUsed } = gameData.lastTouch;
+            if (gameData.currentMatchTouches % 2 === 0) {
+                const winnerTeam = gameData.lastTouch.team;
+                gameData.teams[winnerTeam].score--;
 
-            player.totalPoints--;
-            otherPlayer.totalPoints--;
-            gameData.teams[teamId].score--;
+                const playerObj = gameData.teams[winnerTeam].players.find(p => p.name === gameData.lastTouch.player);
+                if (playerObj) {
+                    playerObj.wins--;
+                }
+
+                const loserTeam = winnerTeam === 1 ? 2 : 1;
+                gameData.teams[loserTeam].playedPlayers = gameData.teams[loserTeam].playedPlayers.filter(p => p !== gameData.lastTouch.player);
+
+                const loserName = winnerTeam === 1 ? gameData.currentMatch.team2[0] : gameData.currentMatch.team1[0];
+                const loserObj = gameData.teams[loserTeam].players.find(p => p.name === loserName);
+                if (loserObj) {
+                    loserObj.losses--;
+                }
+            }
+
+            gameData.lastTouch.button.classList.remove('played');
             gameData.currentMatchTouches--;
-
-            player.timeInAttack -= timeUsed;
-            otherPlayer.timeInDefense -= timeUsed;
-
-            // Retirer de la manche
-            if (player.manches[gameData.currentManche]) {
-                player.manches[gameData.currentManche].points--;
-            }
-            if (otherPlayer.manches[gameData.currentManche]) {
-                otherPlayer.manches[gameData.currentManche].points--;
-            }
-
             gameData.lastTouch = null;
-            alert('↩️ Dernière touche annulée !');
+            updateMatchInfo();
             updateGameDisplay();
+
+            if (gameData.currentMatchTouches === 0) {
+                document.getElementById('btnUndo').style.display = 'none';
+            }
         }
 
-        function handleTimeUp() {
-            playEndSound();
-            
-            const p1 = gameData.currentMatch.team1Player;
-            const p2 = gameData.currentMatch.team2Player;
+        function updateMatchInfo() {
+            const match = gameData.currentMatch;
+            const matchText = `${match.team1.join(', ')} VS ${match.team2.join(', ')}`;
+            document.getElementById('currentMatch').textContent = matchText;
 
-            let sourisTeamId = p1.role === 'souris' ? 1 : 2;
-            const sourisPlayer = sourisTeamId === 1 ? p1 : p2;
-            const chatPlayer = sourisTeamId === 1 ? p2 : p1;
-            const timeUsed = gameData.config.mancheDuration;
-            
-            gameData.teams[sourisTeamId].score++;
-            sourisPlayer.totalPoints++;
-            chatPlayer.totalPoints++;
-
-            sourisPlayer.timeInDefense += timeUsed;
-            chatPlayer.timeInAttack += timeUsed;
-
-            if (!sourisPlayer.manches[gameData.currentManche]) {
-                sourisPlayer.manches[gameData.currentManche] = { points: 0 };
-            }
-            sourisPlayer.manches[gameData.currentManche].points++;
-
-            if (!chatPlayer.manches[gameData.currentManche]) {
-                chatPlayer.manches[gameData.currentManche] = { points: 0 };
-            }
-            chatPlayer.manches[gameData.currentManche].points++;
-
-            gameData.lastTouch = null;
-            alert(`⏰ Temps écoulé ! Souris survit !`);
-            
-            nextMatch();
+            const touchCount = gameData.currentMatchTouches;
+            const progressText = `Touches: ${touchCount}`;
+            document.getElementById('matchProgress').textContent = progressText;
         }
 
-        function nextMatch() {
+        function endGame() {
             stopTimer();
-            selectNextMatch();
-            if (gameData.currentMatch) {
-                updateGameDisplay();
-                resetTimer();
-            }
+            gameData.currentMatch = null;
+            endManche();
         }
 
         function endManche() {
-            stopTimer();
-            
+            const team1Score = gameData.teams[1].score;
+            const team2Score = gameData.teams[2].score;
+
             if (gameData.currentManche < gameData.config.nbManches) {
-                if (confirm(`✅ Manche ${gameData.currentManche} terminée !\n\nPasser à la manche suivante ?`)) {
-                    gameData.currentManche++;
-                    gameData.teams[1].playedPlayers = [];
-                    gameData.teams[2].playedPlayers = [];
-                    assignRoles();
-                    selectNextMatch();
-                    updateGameDisplay();
-                    resetTimer();
-                }
+                gameData.currentManche++;
+                gameData.teams[1].playedPlayers = [];
+                gameData.teams[2].playedPlayers = [];
+                gameData.currentMatch = null;
+                updateGameDisplay();
+                nextMatch();
             } else {
-                endGame();
+                showEndGameModal();
             }
         }
 
-        function resetTimer() {
-            stopTimer();
-            gameData.timer.timeLeft = gameData.config.mancheDuration;
-            updateTimerDisplay();
-        }
+        function showEndGameModal() {
+            const team1 = gameData.teams[1];
+            const team2 = gameData.teams[2];
 
-        function toggleTimer() {
-            if (gameData.timer.isRunning) {
-                stopTimer();
+            let resultsHTML = `<strong>${team1.name}</strong>: ${team1.score} points<br>`;
+            resultsHTML += `<strong>${team2.name}</strong>: ${team2.score} points<br><br>`;
+
+            if (team1.score > team2.score) {
+                resultsHTML += `<strong style="color: #ff4757;">🏆 ${team1.name} gagne!</strong>`;
+            } else if (team2.score > team1.score) {
+                resultsHTML += `<strong style="color: #00d4ff;">🏆 ${team2.name} gagne!</strong>`;
             } else {
-                startTimer();
+                resultsHTML += `<strong style="color: #ffd700;">⚖️ Égalité!</strong>`;
             }
+
+            document.getElementById('resultsText').innerHTML = resultsHTML;
+            document.getElementById('endGameModal').classList.add('active');
+            playEndSound();
         }
 
-        function startTimer() {
-            if (gameData.timer.isRunning) return;
-            
-            gameData.timer.isRunning = true;
-            document.getElementById('btnStartTimer').style.display = 'none';
-            document.getElementById('btnStopTimer').style.display = 'inline-block';
-
-            gameData.timer.interval = setInterval(() => {
-                gameData.timer.timeLeft--;
-                updateTimerDisplay();
-
-                if (gameData.timer.timeLeft <= 0) {
-                    handleTimeUp();
-                }
-            }, 1000);
+        function closeEndGameModal() {
+            document.getElementById('endGameModal').classList.remove('active');
+            backToConfig();
         }
 
-        function stopTimer() {
-            gameData.timer.isRunning = false;
-            clearInterval(gameData.timer.interval);
-            document.getElementById('btnStartTimer').style.display = 'inline-block';
-            document.getElementById('btnStopTimer').style.display = 'none';
-        }
-
-        function updateTimerDisplay() {
-            const minutes = Math.floor(gameData.timer.timeLeft / 60);
-            const seconds = gameData.timer.timeLeft % 60;
-            document.getElementById('timerDisplay').textContent = 
-                `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        function backToConfig() {
+            document.getElementById('gameSection').classList.remove('active');
+            document.getElementById('configSection').style.display = 'block';
+            gameData.teams[1].score = 0;
+            gameData.teams[2].score = 0;
+            gameData.teams[1].playedPlayers = [];
+            gameData.teams[2].playedPlayers = [];
+            gameData.teams[1].players.forEach(p => { p.wins = 0; p.losses = 0; });
+            gameData.teams[2].players.forEach(p => { p.wins = 0; p.losses = 0; });
         }
 
         function updateStats() {
             const statsGrid = document.getElementById('statsGrid');
             statsGrid.innerHTML = '';
 
-            [1, 2].forEach(teamId => {
-                gameData.teams[teamId].players.forEach(player => {
+            [1, 2].forEach(teamNum => {
+                const team = gameData.teams[teamNum];
+                team.players.forEach(player => {
                     const card = document.createElement('div');
-                    card.className = `player-stat-card team-${teamId}`;
-
-                    const totalPoints = player.totalPoints;
-                    const timeAttack = player.timeInAttack;
-                    const timeDefense = player.timeInDefense;
-
+                    card.className = `player-stat-card team-${teamNum}`;
                     card.innerHTML = `
-                        <div class="stat-name">#${player.id + 1} ${player.prenom}</div>
-                        
-                        <div class="stat-line" style="background: rgba(255, 215, 0, 0.2); padding: 8px; border-radius: 4px; margin-bottom: 10px;">
-                            <span>POINTS CUMULÉS</span>
-                            <span class="stat-value" style="font-size: 1.3em;">${totalPoints}</span>
-                        </div>
-
+                        <div class="stat-name">${player.name}</div>
                         <div class="stat-line">
-                            <span>Temps en Attaque :</span>
-                            <span class="stat-value">${timeAttack}s</span>
+                            <span>Victoires:</span>
+                            <span class="stat-value">${player.wins}</span>
                         </div>
                         <div class="stat-line">
-                            <span>Temps en Défense :</span>
-                            <span class="stat-value">${timeDefense}s</span>
+                            <span>Défaites:</span>
+                            <span class="stat-value">${player.losses}</span>
                         </div>
                     `;
-
                     statsGrid.appendChild(card);
                 });
             });
@@ -1475,97 +1292,98 @@
             const rankingGrid = document.getElementById('rankingGrid');
             rankingGrid.innerHTML = '';
 
-            const allPlayers = [];
-            [1, 2].forEach(teamId => {
-                gameData.teams[teamId].players.forEach(player => {
-                    allPlayers.push({ ...player, teamId });
+            [1, 2].forEach(teamNum => {
+                const team = gameData.teams[teamNum];
+                const sorted = [...team.players].sort((a, b) => b.wins - a.wins);
+
+                const card = document.createElement('div');
+                card.className = `ranking-card team-${teamNum}`;
+                card.style.borderColor = teamNum === 1 ? '#ff4757' : '#00d4ff';
+
+                const title = document.createElement('h3');
+                title.textContent = `${team.name}`;
+                card.appendChild(title);
+
+                const list = document.createElement('ul');
+                list.className = 'ranking-list';
+
+                sorted.forEach((player, index) => {
+                    const medals = ['🥇', '🥈', '🥉'];
+                    const medal = medals[index] || '•';
+                    const li = document.createElement('li');
+                    li.innerHTML = `
+                        <div class="ranking-position">
+                            <span class="ranking-medal">${medal}</span>
+                            <span class="ranking-name">${player.name}</span>
+                        </div>
+                        <span class="ranking-time">${player.wins}W</span>
+                    `;
+                    list.appendChild(li);
                 });
+
+                card.appendChild(list);
+                rankingGrid.appendChild(card);
             });
-
-            const attackers = allPlayers.filter(p => p.timeInAttack > 0).sort((a, b) => a.timeInAttack - b.timeInAttack);
-            const defenders = allPlayers.filter(p => p.timeInDefense > 0).sort((a, b) => b.timeInDefense - a.timeInDefense);
-
-            // Classement Attaquants
-            const attackCard = document.createElement('div');
-            attackCard.className = 'ranking-card';
-            attackCard.style.borderColor = '#ff4757';
-            attackCard.innerHTML = '<h3>🔴 Meilleur Attaquant (Plus Rapide)</h3>';
-            
-            const attackList = document.createElement('ul');
-            attackList.className = 'ranking-list';
-            attackers.slice(0, 5).forEach((player, index) => {
-                const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
-                const li = document.createElement('li');
-                li.innerHTML = `
-                    <div class="ranking-position">
-                        <span class="ranking-medal">${medals[index]}</span>
-                        <span class="ranking-name">#${player.id + 1} ${player.prenom}</span>
-                    </div>
-                    <span class="ranking-time">${player.timeInAttack}s</span>
-                `;
-                attackList.appendChild(li);
-            });
-            attackCard.appendChild(attackList);
-            rankingGrid.appendChild(attackCard);
-
-            // Classement Défenseurs
-            const defenseCard = document.createElement('div');
-            defenseCard.className = 'ranking-card';
-            defenseCard.style.borderColor = '#2ed573';
-            defenseCard.innerHTML = '<h3>🟢 Meilleur Défenseur (Plus Loin)</h3>';
-            
-            const defenseList = document.createElement('ul');
-            defenseList.className = 'ranking-list';
-            defenders.slice(0, 5).forEach((player, index) => {
-                const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
-                const li = document.createElement('li');
-                li.innerHTML = `
-                    <div class="ranking-position">
-                        <span class="ranking-medal">${medals[index]}</span>
-                        <span class="ranking-name">#${player.id + 1} ${player.prenom}</span>
-                    </div>
-                    <span class="ranking-time">${player.timeInDefense}s</span>
-                `;
-                defenseList.appendChild(li);
-            });
-            defenseCard.appendChild(defenseList);
-            rankingGrid.appendChild(defenseCard);
         }
 
-        function endGame() {
-            stopTimer();
-            const winner = gameData.teams[1].score > gameData.teams[2].score 
-                ? gameData.teams[1].name 
-                : gameData.teams[2].score > gameData.teams[1].score 
-                    ? gameData.teams[2].name 
-                    : 'ÉGALITÉ ⚖️';
-
-            document.getElementById('endGameModal').classList.add('active');
-
-            const resultsText = `
-🏁 RÉSULTATS FINAUX
-━━━━━━━━━━━━━━━━━━━
-
-${gameData.teams[1].name} : ${gameData.teams[1].score} points
-${gameData.teams[2].name} : ${gameData.teams[2].score} points
-
-🏆 GAGNANT : ${winner}
-            `;
-
-            document.getElementById('resultsText').innerHTML = resultsText.replace(/\n/g, '<br>');
+        function toggleTimer() {
+            if (!gameData.timer.isRunning) {
+                startTimer();
+            } else {
+                pauseTimer();
+            }
         }
 
-        function closeEndGameModal() {
-            document.getElementById('endGameModal').classList.remove('active');
-            backToConfig();
+        function startTimer() {
+            if (gameData.timer.timeLeft === 0) {
+                gameData.timer.timeLeft = gameData.config.mancheDuration;
+            }
+
+            gameData.timer.isRunning = true;
+            document.getElementById('btnStartTimer').style.display = 'none';
+            document.getElementById('btnStopTimer').style.display = 'inline-block';
+
+            gameData.timer.interval = setInterval(() => {
+                gameData.timer.timeLeft--;
+                updateTimerDisplay();
+
+                if (gameData.timer.timeLeft <= 0) {
+                    stopTimer();
+                }
+            }, 1000);
         }
 
-        function backToConfig() {
-            stopTimer();
-            document.getElementById('gameSection').classList.remove('active');
-            document.getElementById('configSection').style.display = 'block';
-            gameData.currentManche = 1;
+        function pauseTimer() {
+            gameData.timer.isRunning = false;
+            clearInterval(gameData.timer.interval);
+            document.getElementById('btnStartTimer').style.display = 'inline-block';
+            document.getElementById('btnStopTimer').style.display = 'none';
         }
+
+        function stopTimer() {
+            gameData.timer.isRunning = false;
+            clearInterval(gameData.timer.interval);
+            document.getElementById('btnStartTimer').style.display = 'inline-block';
+            document.getElementById('btnStopTimer').style.display = 'none';
+        }
+
+        function resetTimer() {
+            gameData.timer.timeLeft = gameData.config.mancheDuration;
+            gameData.timer.isRunning = false;
+            clearInterval(gameData.timer.interval);
+            updateTimerDisplay();
+            document.getElementById('btnStartTimer').style.display = 'inline-block';
+            document.getElementById('btnStopTimer').style.display = 'none';
+        }
+
+        function updateTimerDisplay() {
+            const minutes = Math.floor(gameData.timer.timeLeft / 60);
+            const seconds = gameData.timer.timeLeft % 60;
+            const timeString = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            document.getElementById('timerDisplay').textContent = timeString;
+        }
+
+        updatePlayerInputs();
     </script>
 </body>
 </html>
