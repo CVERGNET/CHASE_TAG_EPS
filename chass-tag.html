@@ -502,6 +502,12 @@
             cursor: not-allowed;
         }
 
+        .player-button.timer-disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            background: rgba(100, 100, 100, 0.5) !important;
+        }
+
         .player-name {
             font-weight: bold;
             font-size: 1.1em;
@@ -1000,168 +1006,230 @@
             const team1Name = document.getElementById('team1Name').value;
             const team2Name = document.getElementById('team2Name').value;
 
-            gameData.teams[1].name = team1Name;
-            gameData.teams[2].name = team2Name;
+            const team1Players = [];
+            const team2Players = [];
 
-            const team1Players = Array.from(document.querySelectorAll('#team1Players .player-input')).map(input => input.value.trim()).filter(v => v);
-            const team2Players = Array.from(document.querySelectorAll('#team2Players .player-input')).map(input => input.value.trim()).filter(v => v);
+            document.querySelectorAll('#team1Players .player-input').forEach(input => {
+                if (input.value.trim()) {
+                    team1Players.push({ name: input.value.trim(), touched: 0, scored: 0 });
+                }
+            });
+
+            document.querySelectorAll('#team2Players .player-input').forEach(input => {
+                if (input.value.trim()) {
+                    team2Players.push({ name: input.value.trim(), touched: 0, scored: 0 });
+                }
+            });
 
             if (team1Players.length === 0 || team2Players.length === 0) {
-                alert('Veuillez entrer au moins un joueur par équipe!');
+                alert('Veuillez ajouter au moins un joueur par équipe');
                 return;
             }
 
-            gameData.teams[1].players = team1Players.map(name => ({ name, touches: 0, matchesJoued: 0 }));
-            gameData.teams[2].players = team2Players.map(name => ({ name, touches: 0, matchesJoued: 0 }));
+            gameData.teams[1].name = team1Name;
+            gameData.teams[1].players = team1Players;
+            gameData.teams[2].name = team2Name;
+            gameData.teams[2].players = team2Players;
+            gameData.currentManche = 1;
+            gameData.currentMatch = null;
+            gameData.teams[1].score = 0;
+            gameData.teams[2].score = 0;
+            gameData.teams[1].playedPlayers = [];
+            gameData.teams[2].playedPlayers = [];
 
-            document.getElementById('configSection').style.display = 'none';
+            document.getElementById('configSection').classList.remove('active');
             document.getElementById('gameSection').classList.add('active');
-            document.getElementById('mancheTotal').textContent = gameData.config.nbManches;
 
-            initializeMatch();
+            document.getElementById('mancheTotal').textContent = gameData.config.nbManches;
+            document.getElementById('team1DisplayName').textContent = gameData.teams[1].name;
+            document.getElementById('team2DisplayName').textContent = gameData.teams[2].name;
+            document.getElementById('team1TitleName').textContent = gameData.teams[1].name;
+            document.getElementById('team2TitleName').textContent = gameData.teams[2].name;
+
+            nextMatch();
         }
 
-        function initializeMatch() {
+        function disableAllPlayerButtons() {
+            document.querySelectorAll('.player-button').forEach(btn => {
+                btn.classList.add('timer-disabled');
+                btn.style.pointerEvents = 'none';
+            });
+        }
+
+        function enablePlayerButtons() {
+            document.querySelectorAll('.player-button').forEach(btn => {
+                if (!btn.classList.contains('played') && !btn.classList.contains('disabled')) {
+                    btn.classList.remove('timer-disabled');
+                    btn.style.pointerEvents = 'auto';
+                }
+            });
+        }
+
+        function nextMatch() {
+            if (gameData.currentMatch === null) {
+                gameData.currentMatch = 0;
+            } else {
+                gameData.currentMatch++;
+            }
+
+            const playerCountTeam1 = gameData.teams[1].players.length;
+            const playerCountTeam2 = gameData.teams[2].players.length;
+
+            if (gameData.currentMatch >= playerCountTeam1 * playerCountTeam2) {
+                endManche();
+                return;
+            }
+
             gameData.currentMatchTouches = 0;
             gameData.lastTouch = null;
 
-            document.getElementById('btnUndo').style.display = 'none';
-            document.getElementById('btnStartTimer').style.display = 'inline-block';
-            document.getElementById('btnStopTimer').style.display = 'none';
+            const playerIndex1 = Math.floor(gameData.currentMatch / playerCountTeam2);
+            const playerIndex2 = gameData.currentMatch % playerCountTeam2;
 
-            const mode = gameData.config.gameMode === 'random' ? 'ALÉATOIRE' : 'DÉFI';
-            const roleMode = gameData.config.roleMode === 'fixed' ? 'Fixe' : 'Alternance';
-            document.getElementById('modeDisplay').textContent = `Mode: ${mode} | Rôles: ${roleMode}`;
+            const player1 = gameData.teams[1].players[playerIndex1];
+            const player2 = gameData.teams[2].players[playerIndex2];
 
-            selectNextMatch();
-            displayPlayers();
+            const modeDisplay = document.getElementById('modeDisplay');
+            if (gameData.config.gameMode === 'random') {
+                modeDisplay.textContent = '🎲 MODE ALÉATOIRE';
+            } else {
+                modeDisplay.textContent = '🎯 MODE DÉFI (ORDRE)';
+            }
+
+            document.getElementById('currentMatch').innerHTML = `
+                ${player1.name} (${gameData.teams[1].name}) VS ${player2.name} (${gameData.teams[2].name})
+            `;
+
+            updateGameBoard();
             resetTimer();
-            updateStats();
-            updateRankings();
+            disableAllPlayerButtons();
         }
 
-        function selectNextMatch() {
-            let team1ChatRole = gameData.currentManche % 2 === 1;
-            if (gameData.config.roleMode === 'fixed') {
-                team1ChatRole = true;
-            }
+        function updateGameBoard() {
+            const team1GamePlayers = document.getElementById('team1GamePlayers');
+            const team2GamePlayers = document.getElementById('team2GamePlayers');
 
-            const team1Idx = Math.floor(Math.random() * gameData.teams[1].players.length);
-            const team2Idx = Math.floor(Math.random() * gameData.teams[2].players.length);
+            team1GamePlayers.innerHTML = '';
+            team2GamePlayers.innerHTML = '';
 
-            gameData.currentMatch = {
-                team1Player: team1Idx,
-                team2Player: team2Idx,
-                team1IsChat: team1ChatRole
-            };
-
-            const player1 = gameData.teams[1].players[team1Idx].name;
-            const player2 = gameData.teams[2].players[team2Idx].name;
-            const role1 = team1ChatRole ? 'CHAT' : 'SOURIS';
-            const role2 = team1ChatRole ? 'SOURIS' : 'CHAT';
-
-            document.getElementById('team1Role').textContent = role1;
-            document.getElementById('team2Role').textContent = role2;
-            document.getElementById('team1Role').className = 'role-badge ' + (team1ChatRole ? 'chat-badge' : 'souris-badge');
-            document.getElementById('team2Role').className = 'role-badge ' + (team1ChatRole ? 'souris-badge' : 'chat-badge');
-
-            document.getElementById('currentMatch').textContent = `${player1} (${role1}) vs ${player2} (${role2})`;
-
-            const totalMatches = gameData.teams[1].players.length * gameData.teams[2].players.length;
-            const currentMatchNum = gameData.currentManche * Math.floor(Math.random() * 100) % totalMatches + 1;
-            document.getElementById('matchProgress').textContent = `Affrontement ${currentMatchNum} de ${totalMatches}`;
-        }
-
-        function displayPlayers() {
-            const team1Board = document.getElementById('team1GamePlayers');
-            const team2Board = document.getElementById('team2GamePlayers');
-
-            team1Board.innerHTML = '';
-            team2Board.innerHTML = '';
-
-            gameData.teams[1].players.forEach((player, idx) => {
+            gameData.teams[1].players.forEach((player, index) => {
                 const btn = document.createElement('button');
                 btn.className = 'player-button';
-                if (idx !== gameData.currentMatch.team1Player) {
+                btn.innerHTML = `
+                    <div class="player-name">${player.name}</div>
+                    <div class="player-stats">Touches: ${player.touched} | Points: ${player.scored}</div>
+                `;
+
+                if (gameData.teams[1].playedPlayers.includes(index)) {
+                    btn.classList.add('played');
+                } else if (gameData.currentMatch !== null && index === Math.floor(gameData.currentMatch / gameData.teams[2].players.length)) {
+                    btn.classList.remove('disabled');
+                } else {
                     btn.classList.add('disabled');
                 }
-                btn.innerHTML = `<div class="player-name">${player.name}</div><div class="player-stats">Touches: ${player.touches} | Matchs: ${player.matchesJoued}</div>`;
-                btn.onclick = () => recordTouch(1, idx);
-                team1Board.appendChild(btn);
+
+                btn.onclick = () => registerTouch(1, index);
+                team1GamePlayers.appendChild(btn);
             });
 
-            gameData.teams[2].players.forEach((player, idx) => {
+            gameData.teams[2].players.forEach((player, index) => {
                 const btn = document.createElement('button');
                 btn.className = 'player-button';
-                if (idx !== gameData.currentMatch.team2Player) {
+                btn.innerHTML = `
+                    <div class="player-name">${player.name}</div>
+                    <div class="player-stats">Touches: ${player.touched} | Points: ${player.scored}</div>
+                `;
+
+                if (gameData.teams[2].playedPlayers.includes(index)) {
+                    btn.classList.add('played');
+                } else if (gameData.currentMatch !== null && index === gameData.currentMatch % gameData.teams[2].players.length) {
+                    btn.classList.remove('disabled');
+                } else {
                     btn.classList.add('disabled');
                 }
-                btn.innerHTML = `<div class="player-name">${player.name}</div><div class="player-stats">Touches: ${player.touches} | Matchs: ${player.matchesJoued}</div>`;
-                btn.onclick = () => recordTouch(2, idx);
-                team2Board.appendChild(btn);
+
+                btn.onclick = () => registerTouch(2, index);
+                team2GamePlayers.appendChild(btn);
             });
+
+            disableAllPlayerButtons();
         }
 
-        function recordTouch(teamNum, playerIdx) {
-            // Prevent recording touch if timer is not running
+        function registerTouch(team, playerIndex) {
             if (!gameData.timer.isRunning) {
-                alert('⏱️ Veuillez démarrer le chrono avant de pouvoir enregistrer une touche!');
+                alert('⏸️ Le chronomètre n\'est pas lancé! Cliquez sur "DÉMARRER" pour commencer.');
                 return;
             }
 
-            if (playerIdx !== gameData.currentMatch[`team${teamNum}Player`]) {
+            if (gameData.currentMatch === null) return;
+
+            const player = gameData.teams[team].players[playerIndex];
+            const playerCountTeam2 = gameData.teams[2].players.length;
+            const currentPlayerTeam1 = Math.floor(gameData.currentMatch / playerCountTeam2);
+            const currentPlayerTeam2 = gameData.currentMatch % playerCountTeam2;
+
+            if (team === 1 && playerIndex !== currentPlayerTeam1) {
+                alert('Seul le joueur de l\'équipe CHAT peut être enregistré!');
+                return;
+            }
+            if (team === 2 && playerIndex !== currentPlayerTeam2) {
+                alert('Seul le joueur de l\'équipe SOURIS peut être enregistré!');
                 return;
             }
 
-            gameData.teams[teamNum].players[playerIdx].touches++;
-            gameData.teams[teamNum].score++;
+            if (gameData.teams[team].playedPlayers.includes(playerIndex)) {
+                alert('Ce joueur a déjà été enregistré pour cette manche!');
+                return;
+            }
+
+            player.touched++;
+            player.scored++;
+            gameData.teams[team].score++;
             gameData.currentMatchTouches++;
+            gameData.lastTouch = { team, playerIndex };
 
-            gameData.lastTouch = { teamNum, playerIdx };
+            updateGameBoard();
+            updateStatsDisplay();
+            updateRankingDisplay();
+
             document.getElementById('btnUndo').style.display = 'inline-block';
-
-            document.getElementById(`team${teamNum}Score`).textContent = gameData.teams[teamNum].score;
-            updateStats();
         }
 
         function undoLastTouch() {
             if (!gameData.lastTouch) return;
 
-            const { teamNum, playerIdx } = gameData.lastTouch;
-            gameData.teams[teamNum].players[playerIdx].touches--;
-            gameData.teams[teamNum].score--;
+            const { team, playerIndex } = gameData.lastTouch;
+            const player = gameData.teams[team].players[playerIndex];
+
+            player.touched--;
+            player.scored--;
+            gameData.teams[team].score--;
             gameData.currentMatchTouches--;
-
-            document.getElementById(`team${teamNum}Score`).textContent = gameData.teams[teamNum].score;
             gameData.lastTouch = null;
-            document.getElementById('btnUndo').style.display = 'none';
-            updateStats();
-        }
 
-        function nextMatch() {
-            gameData.teams[1].players[gameData.currentMatch.team1Player].matchesJoued++;
-            gameData.teams[2].players[gameData.currentMatch.team2Player].matchesJoued++;
+            updateGameBoard();
+            updateStatsDisplay();
+            updateRankingDisplay();
 
-            gameData.currentMatchTouches = 0;
-            selectNextMatch();
-            displayPlayers();
-            resetTimer();
-            updateStats();
+            if (!gameData.lastTouch) {
+                document.getElementById('btnUndo').style.display = 'none';
+            }
         }
 
         function toggleTimer() {
             if (gameData.timer.isRunning) {
-                stopTimer();
+                pauseTimer();
             } else {
                 startTimer();
             }
         }
 
         function startTimer() {
-            if (gameData.timer.timeLeft === 0) {
-                gameData.timer.timeLeft = gameData.config.mancheDuration;
-            }
+            if (gameData.timer.isRunning) return;
+
             gameData.timer.isRunning = true;
+            enablePlayerButtons();
+
             document.getElementById('btnStartTimer').style.display = 'none';
             document.getElementById('btnStopTimer').style.display = 'inline-block';
 
@@ -1169,112 +1237,115 @@
                 gameData.timer.timeLeft--;
                 updateTimerDisplay();
 
-                if (gameData.timer.timeLeft === 0) {
+                if (gameData.timer.timeLeft <= 0) {
                     stopTimer();
-                    playEndSound();
                 }
             }, 1000);
         }
 
-        function stopTimer() {
+        function pauseTimer() {
             gameData.timer.isRunning = false;
-            if (gameData.timer.interval) {
-                clearInterval(gameData.timer.interval);
-                gameData.timer.interval = null;
-            }
+            disableAllPlayerButtons();
+            clearInterval(gameData.timer.interval);
+
             document.getElementById('btnStartTimer').style.display = 'inline-block';
             document.getElementById('btnStopTimer').style.display = 'none';
         }
 
+        function stopTimer() {
+            gameData.timer.isRunning = false;
+            disableAllPlayerButtons();
+            clearInterval(gameData.timer.interval);
+            playEndSound();
+
+            document.getElementById('btnStartTimer').style.display = 'inline-block';
+            document.getElementById('btnStopTimer').style.display = 'none';
+
+            gameData.teams[1].playedPlayers = gameData.teams[1].players.map((_, i) => i);
+            gameData.teams[2].playedPlayers = gameData.teams[2].players.map((_, i) => i);
+
+            updateGameBoard();
+        }
+
         function resetTimer() {
-            stopTimer();
+            gameData.timer.isRunning = false;
             gameData.timer.timeLeft = gameData.config.mancheDuration;
+            clearInterval(gameData.timer.interval);
+
+            document.getElementById('btnStartTimer').style.display = 'inline-block';
+            document.getElementById('btnStopTimer').style.display = 'none';
+
+            disableAllPlayerButtons();
             updateTimerDisplay();
         }
 
         function updateTimerDisplay() {
             const minutes = Math.floor(gameData.timer.timeLeft / 60);
             const seconds = gameData.timer.timeLeft % 60;
-            document.getElementById('timerDisplay').textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            document.getElementById('timerDisplay').textContent =
+                `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
         }
 
-        function updateStats() {
-            const statsGrid = document.getElementById('statsGrid');
-            statsGrid.innerHTML = '';
+        function endManche() {
+            stopTimer();
 
-            for (let teamNum = 1; teamNum <= 2; teamNum++) {
-                gameData.teams[teamNum].players.forEach(player => {
-                    const card = document.createElement('div');
-                    card.className = `player-stat-card team-${teamNum}`;
-                    card.innerHTML = `
-                        <div class="stat-name">${player.name}</div>
-                        <div class="stat-line">
-                            <span>Touches:</span>
-                            <span class="stat-value">${player.touches}</span>
-                        </div>
-                        <div class="stat-line">
-                            <span>Matchs joués:</span>
-                            <span class="stat-value">${player.matchesJoued}</span>
-                        </div>
-                        <div class="stat-line">
-                            <span>Moyenne:</span>
-                            <span class="stat-value">${player.matchesJoued > 0 ? (player.touches / player.matchesJoued).toFixed(2) : '0.00'}</span>
-                        </div>
-                    `;
-                    statsGrid.appendChild(card);
+            const results = {
+                manche: gameData.currentManche,
+                team1: {
+                    name: gameData.teams[1].name,
+                    score: gameData.teams[1].score,
+                    players: gameData.teams[1].players.map(p => ({ name: p.name, touched: p.touched, scored: p.scored }))
+                },
+                team2: {
+                    name: gameData.teams[2].name,
+                    score: gameData.teams[2].score,
+                    players: gameData.teams[2].players.map(p => ({ name: p.name, touched: p.touched, scored: p.scored }))
+                }
+            };
+
+            if (gameData.currentManche < gameData.config.nbManches) {
+                gameData.currentManche++;
+                gameData.currentMatch = null;
+                gameData.teams[1].score = 0;
+                gameData.teams[2].score = 0;
+                gameData.teams[1].playedPlayers = [];
+                gameData.teams[2].playedPlayers = [];
+
+                document.getElementById('mancheCounter').textContent = gameData.currentManche;
+
+                gameData.teams[1].players.forEach(p => {
+                    p.touched = 0;
+                    p.scored = 0;
                 });
+                gameData.teams[2].players.forEach(p => {
+                    p.touched = 0;
+                    p.scored = 0;
+                });
+
+                updateGameBoard();
+                updateStatsDisplay();
+                updateRankingDisplay();
+
+                nextMatch();
+            } else {
+                endGame();
             }
-        }
-
-        function updateRankings() {
-            const rankingGrid = document.getElementById('rankingGrid');
-            rankingGrid.innerHTML = '';
-
-            const allPlayers = [];
-            gameData.teams[1].players.forEach(p => allPlayers.push({ ...p, team: 1 }));
-            gameData.teams[2].players.forEach(p => allPlayers.push({ ...p, team: 2 }));
-
-            allPlayers.sort((a, b) => {
-                const avgA = a.matchesJoued > 0 ? a.touches / a.matchesJoued : 0;
-                const avgB = b.matchesJoued > 0 ? b.touches / b.matchesJoued : 0;
-                return avgB - avgA;
-            });
-
-            const medals = ['🥇', '🥈', '🥉'];
-
-            const card = document.createElement('div');
-            card.className = 'ranking-card';
-            card.style.borderColor = '#ffd700';
-            card.innerHTML = '<h3>Meilleurs joueurs</h3><ul class="ranking-list">' +
-                allPlayers.slice(0, 10).map((p, i) => `
-                    <li>
-                        <div class="ranking-position">
-                            <span class="ranking-medal">${medals[i] || `${i + 1}.`}</span>
-                            <span class="ranking-name">${p.name}</span>
-                        </div>
-                        <span class="ranking-time">${p.matchesJoued > 0 ? (p.touches / p.matchesJoued).toFixed(2) : '0.00'} touches/match</span>
-                    </li>
-                `).join('') +
-                '</ul>';
-            rankingGrid.appendChild(card);
         }
 
         function endGame() {
-            stopTimer();
+            const resultsText = document.getElementById('resultsText');
+            resultsText.innerHTML = '<h3 style="color: #ffd700;">Statistiques finales</h3>';
 
-            let resultsHTML = '<h3 style="color: #ffd700; margin-bottom: 15px;">Résultats finaux</h3>';
-            resultsHTML += `<p style="margin: 10px 0;"><strong>Score Équipe 1 (${gameData.teams[1].name}):</strong> ${gameData.teams[1].score}</p>`;
-            resultsHTML += `<p style="margin: 10px 0;"><strong>Score Équipe 2 (${gameData.teams[2].name}):</strong> ${gameData.teams[2].score}</p>`;
+            gameData.teams[1].players.forEach(p => {
+                resultsText.innerHTML += `<p>${p.name}: ${p.touched} touches, ${p.scored} points</p>`;
+            });
 
-            if (gameData.teams[1].score > gameData.teams[2].score) {
-                resultsHTML += `<p style="margin: 10px 0; color: #2ed573; font-weight: bold;">🎉 Équipe 1 (${gameData.teams[1].name}) gagne!</p>`;
-            } else if (gameData.teams[2].score > gameData.teams[1].score) {
-                resultsHTML += `<p style="margin: 10px 0; color: #2ed573; font-weight: bold;">🎉 Équipe 2 (${gameData.teams[2].name}) gagne!</p>`;
-            } else {
-                resultsHTML += `<p style="margin: 10px 0; color: #ffd700; font-weight: bold;">⚖️ Égalité!</p>`;
-            }
+            resultsText.innerHTML += '<hr style="border: 1px solid #333; margin: 10px 0;">';
 
-            document.getElementById('resultsText').innerHTML = resultsHTML;
+            gameData.teams[2].players.forEach(p => {
+                resultsText.innerHTML += `<p>${p.name}: ${p.touched} touches, ${p.scored} points</p>`;
+            });
+
             document.getElementById('endGameModal').classList.add('active');
         }
 
@@ -1285,27 +1356,90 @@
 
         function backToConfig() {
             document.getElementById('gameSection').classList.remove('active');
-            document.getElementById('configSection').style.display = 'block';
-            gameData = {
-                config: gameData.config,
-                teams: {
-                    1: { name: 'Équipe 1', players: [], score: 0, playedPlayers: [] },
-                    2: { name: 'Équipe 2', players: [], score: 0, playedPlayers: [] }
-                },
-                currentManche: 1,
-                currentMatch: null,
-                currentMatchTouches: 0,
-                lastTouch: null,
-                timer: {
-                    timeLeft: 0,
-                    isRunning: false,
-                    interval: null
-                }
-            };
+            document.getElementById('configSection').classList.add('active');
+            stopTimer();
         }
 
-        // Initialize player inputs on page load
+        function updateStatsDisplay() {
+            const statsGrid = document.getElementById('statsGrid');
+            statsGrid.innerHTML = '';
+
+            gameData.teams[1].players.forEach(player => {
+                const statCard = document.createElement('div');
+                statCard.className = 'player-stat-card team-1';
+                statCard.innerHTML = `
+                    <div class="stat-name">${player.name}</div>
+                    <div class="stat-line">
+                        <span>Touches:</span>
+                        <span class="stat-value">${player.touched}</span>
+                    </div>
+                    <div class="stat-line">
+                        <span>Points:</span>
+                        <span class="stat-value">${player.scored}</span>
+                    </div>
+                `;
+                statsGrid.appendChild(statCard);
+            });
+
+            gameData.teams[2].players.forEach(player => {
+                const statCard = document.createElement('div');
+                statCard.className = 'player-stat-card team-2';
+                statCard.innerHTML = `
+                    <div class="stat-name">${player.name}</div>
+                    <div class="stat-line">
+                        <span>Touches:</span>
+                        <span class="stat-value">${player.touched}</span>
+                    </div>
+                    <div class="stat-line">
+                        <span>Points:</span>
+                        <span class="stat-value">${player.scored}</span>
+                    </div>
+                `;
+                statsGrid.appendChild(statCard);
+            });
+        }
+
+        function updateRankingDisplay() {
+            const rankingGrid = document.getElementById('rankingGrid');
+            rankingGrid.innerHTML = '';
+
+            const sortedPlayers1 = [...gameData.teams[1].players].sort((a, b) => b.scored - a.scored);
+            const sortedPlayers2 = [...gameData.teams[2].players].sort((a, b) => b.scored - a.scored);
+
+            const createCard = (players, teamName, teamClass, badge) => {
+                const card = document.createElement('div');
+                card.className = `ranking-card ${teamClass}`;
+                card.style.borderColor = teamClass === 'team-1' ? '#ff4757' : '#00d4ff';
+
+                card.innerHTML = `<h3>${badge} ${teamName}</h3><ul class="ranking-list">`;
+
+                const medals = ['🥇', '🥈', '🥉'];
+
+                players.forEach((player, index) => {
+                    const medal = medals[index] || '•';
+                    card.innerHTML += `
+                        <li>
+                            <div class="ranking-position">
+                                <span class="ranking-medal">${medal}</span>
+                                <span class="ranking-name">${player.name}</span>
+                            </div>
+                            <span class="ranking-time">${player.scored} pts</span>
+                        </li>
+                    `;
+                });
+
+                card.innerHTML += '</ul>';
+                return card;
+            };
+
+            rankingGrid.appendChild(createCard(sortedPlayers1, gameData.teams[1].name, 'team-1', '🔴'));
+            rankingGrid.appendChild(createCard(sortedPlayers2, gameData.teams[2].name, 'team-2', '🔵'));
+        }
+
+        // Initialize
         updatePlayerInputs();
+        updateStatsDisplay();
+        updateRankingDisplay();
     </script>
 </body>
 </html>
