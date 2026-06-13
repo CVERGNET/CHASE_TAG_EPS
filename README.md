@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
@@ -1677,6 +1677,3 @@ ${gameData.teams[2].name} : ${gameData.teams[2].score} points
             gameData.currentManche = 1;
         }
     </script>
-</body>
-</html># CHASS_TAG_EPS
-Aide à l'observation
