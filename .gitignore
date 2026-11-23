@@ -1,0 +1,10 @@
+# Données élèves : ne JAMAIS publier dans ce dépôt public
+*.csv
+*.xlsx
+*.xls
+*.ods
+donnees/
+eleves/
+# Fichiers système
+.DS_Store
+Thumbs.db
