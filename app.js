@@ -25,7 +25,7 @@
 
   /* ---------- État ---------- */
   var defaut = function () {
-    return { dur: 20, son: true, noms: ['Équipe A', 'Équipe B'], joueurs: [], depart: 0, manches: [] };
+    return { dur: 20, son: true, noms: ['Équipe A', 'Équipe B'], joueurs: [], depart: 0, sel: [null, null], manches: [] };
   };
   var S = defaut();          // état enregistré sur l'appareil
   var eleves = [];           // liste Mes Apps EPS
@@ -52,6 +52,23 @@
   var prochainChat = function () {
     return S.manches.length ? 1 - S.manches[S.manches.length - 1].chat : S.depart;
   };
+
+  var joues = function (k) {
+    return S.manches.reduce(function (n, m) { return n + (m.j.some(function (j) { return j.k === k; }) ? 1 : 0); }, 0);
+  };
+  // un joueur par équipe : si la sélection n'est pas valide (ou si on force), on prend le joueur qui a le moins joué
+  function verifSel(forcer) {
+    if (!Array.isArray(S.sel)) S.sel = [null, null];
+    [0, 1].forEach(function (i) {
+      var eq = S.joueurs.filter(function (j) { return j.eq === i; });
+      var ok = eq.some(function (j) { return j.k === S.sel[i]; });
+      if (forcer || !ok) {
+        var best = null;
+        eq.forEach(function (j) { if (!best || joues(j.k) < joues(best.k)) best = j; });
+        S.sel[i] = best ? best.k : null;
+      }
+    });
+  }
 
   function msg(t, c) {
     var s = $('#statut');
@@ -201,15 +218,23 @@
   }
 
   function rPret(v) {
+    verifSel(false);
     var chat = prochainChat(), sou = 1 - chat, n = S.manches.length + 1;
-    var ch = S.joueurs.filter(function (j) { return j.eq === chat; });
-    var so = S.joueurs.filter(function (j) { return j.eq === sou; });
-    var ok = ch.length && so.length;
+    var ok = S.sel[0] && S.sel[1];
+    var carte = function (i, role) {
+      var l = S.joueurs.filter(function (j) { return j.eq === i; });
+      return '<div class="role" style="--c:' + COUL[i] + '"><h3>' + role + ' : ' + esc(nomEq(i)) + '</h3><div class="grille">' +
+        (l.map(function (j) {
+          return '<button class="btn" data-act="sel" data-eq="' + i + '" data-k="' + esc(j.k) + '" aria-pressed="' + (S.sel[i] === j.k) + '">' +
+            esc(lbl(j)) + (joues(j.k) ? ' <small>(' + joues(j.k) + ')</small>' : '') + '</button>';
+        }).join('') || '<p class="vide">Aucun joueur</p>') + '</div></div>';
+    };
     v.innerHTML =
-      '<section class="carte"><h2>Manche ' + n + '</h2><div class="roles">' +
-      '<div class="role" style="--c:' + COUL[chat] + '"><h3>🐱 Chats : ' + esc(nomEq(chat)) + '</h3><p>' + (ch.map(lbl).map(esc).join(', ') || 'Aucun joueur') + '</p></div>' +
-      '<div class="role" style="--c:' + COUL[sou] + '"><h3>🐭 Souris : ' + esc(nomEq(sou)) + '</h3><p>' + (so.map(lbl).map(esc).join(', ') || 'Aucun joueur') + '</p></div>' +
-      '</div><p class="petit">Durée : ' + S.dur + ' s' + (S.manches.length ? ' · rôles inversés par rapport à la manche précédente' : '') + '</p>' +
+      '<section class="carte"><h2>Manche ' + n + '</h2>' +
+      '<p class="petit">Un joueur par équipe : touche le joueur qui passe. (n) = manches déjà jouées.' +
+      (S.manches.length % 2 === 1 ? ' <b>Même duel, rôles inversés.</b>' : '') + '</p>' +
+      '<div class="roles">' + carte(chat, '🐱 Chat') + carte(sou, '🐭 Souris') + '</div>' +
+      '<p class="petit">Durée : ' + S.dur + ' s</p>' +
       (S.manches.length ? '' : '<button class="btn pleine" data-act="inv">⇄ Inverser les rôles</button>') +
       '</section>' +
       (ok
@@ -218,9 +243,10 @@
   }
 
   function rRun(v) {
-    var tot = S.joueurs.filter(function (j) { return j.eq === run.souris; }).length;
+    var tot = run.part.filter(function (j) { return j.eq === run.souris; }).length;
+    var pc = run.part.find(function (j) { return j.eq === run.chat; }), ps = run.part.find(function (j) { return j.eq === run.souris; });
     v.innerHTML =
-      '<section class="carte"><p class="petit" style="text-align:center">Manche ' + run.n + ' · 🐱 ' + esc(nomEq(run.chat)) + ' poursuit · 🐭 ' + esc(nomEq(run.souris)) + ' fuit</p>' +
+      '<section class="carte"><p class="petit" style="text-align:center">Manche ' + run.n + ' · 🐱 ' + esc(lbl(pc)) + ' (' + esc(nomEq(run.chat)) + ') poursuit · 🐭 ' + esc(lbl(ps)) + ' (' + esc(nomEq(run.souris)) + ') fuit</p>' +
       '<div class="chrono" id="chrono">' + fmt(run.dur) + '</div><div class="piste"><i id="barre"></i></div>' +
       '<p class="petit" id="nbt" style="text-align:center;margin:8px 0 0">0 / ' + tot + ' touchées</p></section>' +
       '<section class="carte"><h3 style="margin-top:0">Touche la souris dès qu\'elle est touchée :</h3><div class="grille" id="grille"></div></section>' +
@@ -233,7 +259,8 @@
   function rGrille() {
     var g = $('#grille');
     if (!g || !run) return;
-    var so = S.joueurs.filter(function (j) { return j.eq === run.souris; });
+    var so = run.part.filter(function (j) { return j.eq === run.souris; });
+    g.style.gridTemplateColumns = so.length === 1 ? '1fr' : '';
     var tk = new Map(run.touches.map(function (x) { return [x.mouse, x]; }));
     g.innerHTML = so.map(function (j) {
       var x = tk.get(j.k);
@@ -283,13 +310,14 @@
 
   function go() {
     var chat = prochainChat(), sou = 1 - chat;
-    var ch = S.joueurs.filter(function (j) { return j.eq === chat; });
-    var so = S.joueurs.filter(function (j) { return j.eq === sou; });
-    if (!ch.length || !so.length) { msg('⚠ Il faut au moins un élève dans chaque équipe.', 'err'); return; }
+    verifSel(false);
+    var pc = S.joueurs.find(function (j) { return j.k === S.sel[chat]; });
+    var ps = S.joueurs.find(function (j) { return j.k === S.sel[sou]; });
+    if (!pc || !ps) { msg('⚠ Il faut au moins un élève dans chaque équipe.', 'err'); return; }
     audioInit(); // le navigateur exige un clic pour autoriser le son
     msg('');
     apres = null;
-    run = { n: S.manches.length + 1, chat: chat, souris: sou, dur: S.dur, t0: performance.now(), touches: [], fin: false };
+    run = { n: S.manches.length + 1, chat: chat, souris: sou, dur: S.dur, t0: performance.now(), touches: [], fin: false, part: [pc, ps] };
     timerI = setInterval(majChrono, 100);
     timerF = setTimeout(function () { finir('temps'); }, run.dur * 1000);
     veille(true);
@@ -301,7 +329,7 @@
     var t = elapsed();
     if (t >= run.dur) { finir('temps'); return; }
     if (run.touches.some(function (x) { return x.mouse === k; })) return;
-    var chats = S.joueurs.filter(function (j) { return j.eq === run.chat; });
+    var chats = run.part.filter(function (j) { return j.eq === run.chat; });
     if (chats.length === 1) { ajoutTouche(k, chats[0].k, t); return; }
     var j = S.joueurs.find(function (x) { return x.k === k; });
     pend = { k: k, t: t };
@@ -321,7 +349,7 @@
     if (!run || run.fin) return;
     run.touches.push({ mouse: mouse, chat: chat || null, t: r1(Math.min(t, run.dur)) });
     rGrille();
-    var tot = S.joueurs.filter(function (j) { return j.eq === run.souris; }).length;
+    var tot = run.part.filter(function (j) { return j.eq === run.souris; }).length;
     if (run.touches.length >= tot) finir('tous');
   }
 
@@ -336,10 +364,11 @@
     var m = {
       n: S.manches.length + 1, date: ymd(d), heure: hms(d), dur: run.dur, chat: run.chat,
       noms: [nomEq(0), nomEq(1)],
-      j: S.joueurs.map(function (j) { return { k: j.k, id: j.id, nom: j.nom, prenom: j.prenom, eq: j.eq }; }),
+      j: run.part.map(function (j) { return { k: j.k, id: j.id, nom: j.nom, prenom: j.prenom, eq: j.eq }; }),
       touches: run.touches
     };
     S.manches.push(m);
+    if (S.manches.length % 2 === 0) verifSel(true); // nouveau duel après les 2 manches (rotation)
     sauver();
     apres = m; run = null;
     veille(false);
@@ -558,6 +587,7 @@
       if (S.son) { audioInit(); if (ac) bip(880, 0.2, ac.currentTime); }
     },
     depart: function (d) { S.depart = +d.eq; sauver(); rEquipes(); },
+    sel: function (d) { S.sel[+d.eq] = d.k; sauver(); rJeu(); },
     inv: function () { S.depart = 1 - S.depart; sauver(); rJeu(); },
 
     go: function () { go(); },
